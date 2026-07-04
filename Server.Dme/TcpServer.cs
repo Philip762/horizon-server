@@ -15,6 +15,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using DotNetty.Handlers.Timeout;
 using Server.Dme.PluginArgs;
@@ -37,7 +38,7 @@ namespace Server.Dme
         protected IEventLoopGroup _workerGroup = null;
         protected IChannel _boundChannel = null;
         protected ScertServerHandler _scertHandler = null;
-        private ushort _clientCounter = 0;
+        private int _clientCounter = 0;
 
         protected internal class ChannelData
         {
@@ -683,7 +684,10 @@ namespace Server.Dme
 
         protected ushort GenerateNewScertClientId()
         {
-            return _clientCounter++;
+            // Interlocked: ProcessMessage runs concurrently across channels (continuations resume
+            // on thread-pool threads after the first await), so a plain ++ can hand two clients the
+            // same id and trip the _scertIdToClient duplicate-id guard (which throws + drops them).
+            return (ushort)Interlocked.Increment(ref _clientCounter);
         }
     }
 }

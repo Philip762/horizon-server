@@ -33,7 +33,12 @@ namespace Server.Dme
 
         public int Port { get; protected set; } = -1;
 
-        protected IEventLoopGroup _workerGroup = null;
+        // One event-loop group shared by EVERY per-client UDP server. Previously each UdpServer
+        // (one is created per connected player) allocated its own MultithreadEventLoopGroup, which
+        // defaults to 2*ProcessorCount OS threads -> N players spawned N*2*CPU threads (thousands
+        // of threads / GBs of stack for a full server). Sharing one group keeps the UDP thread
+        // count flat regardless of player count.
+        private static readonly IEventLoopGroup _sharedWorkerGroup = new MultithreadEventLoopGroup();
         protected IChannel _boundChannel = null;
         protected ScertDatagramHandler _scertHandler = null;
 
@@ -80,7 +85,6 @@ namespace Server.Dme
         public virtual async Task Start()
         {
             //
-            _workerGroup = new MultithreadEventLoopGroup();
             _scertHandler = new ScertDatagramHandler();
 
             //
@@ -104,7 +108,7 @@ namespace Server.Dme
 
             var bootstrap = new Bootstrap();
             bootstrap
-                .Group(_workerGroup)
+                .Group(_sharedWorkerGroup)
                 .ChannelFactory(() =>
                 {
                     var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
@@ -143,12 +147,8 @@ namespace Server.Dme
             }
             finally
             {
-                if (_workerGroup != null)
-                {
-                    await Task.WhenAll(
-                            _workerGroup.ShutdownGracefullyAsync(TimeSpan.FromMilliseconds(100), TimeSpan.FromSeconds(1)));
-                }
-
+                // NOTE: _sharedWorkerGroup is shared across all UDP servers, so it is intentionally
+                // never shut down here -- only the per-client bound channel is closed above.
                 FreePort();
             }
         }

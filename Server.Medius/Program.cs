@@ -159,11 +159,9 @@ namespace Server.Medius
             }
             catch (Exception ex)
             {
+                // Log and continue instead of stopping MAS/MLS/MPS on a single tick exception
+                // (which left the main loop spinning against stopped servers = silent outage).
                 Logger.Error(ex);
-
-                await AuthenticationServer.Stop();
-                await LobbyServer.Stop();
-                await ProxyServer.Stop();
             }
         }
 
@@ -219,7 +217,18 @@ namespace Server.Medius
             if (args.Length > 0)
                 CONFIG_DIRECTIORY = args[0];
 
-            // 
+            // Global safety net: log unhandled/unobserved exceptions instead of letting a stray
+            // background-task fault silently terminate a long-running server (no such handler
+            // existed before, so any unobserved Task exception could take the process down).
+            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+                Logger.Error($"FATAL unhandled exception: {e.ExceptionObject}");
+            TaskScheduler.UnobservedTaskException += (s, e) =>
+            {
+                Logger.Error($"Unobserved task exception: {e.Exception}");
+                e.SetObserved();
+            };
+
+            //
             Database ??= new DbController(DB_CONFIG_FILE, DB_SIM_FILE);
 
             // 

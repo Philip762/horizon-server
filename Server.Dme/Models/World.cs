@@ -253,7 +253,9 @@ namespace Server.Dme.Models
 
         public void SendTcpAppSingle(ClientObject source, short targetDmeId, byte[] Payload)
         {
-            var target = Clients.FirstOrDefault(x => x.Value.DmeId == targetDmeId).Value;
+            // Clients is keyed by DmeId, so look up directly instead of an O(n) LINQ scan +
+            // closure allocation on every single-target packet (the most common relay packet).
+            Clients.TryGetValue(targetDmeId, out var target);
 
             if (target != null && target.IsAuthenticated && target.IsConnected && target.HasRecvFlag(RT_RECV_FLAG.RECV_SINGLE))
             {
@@ -267,7 +269,9 @@ namespace Server.Dme.Models
 
         public void SendUdpAppSingle(ClientObject source, short targetDmeId, byte[] Payload)
         {
-            var target = Clients.FirstOrDefault(x => x.Value.DmeId == targetDmeId).Value;
+            // Clients is keyed by DmeId, so look up directly instead of an O(n) LINQ scan +
+            // closure allocation on every single-target packet (the most common relay packet).
+            Clients.TryGetValue(targetDmeId, out var target);
 
             if (target != null && target.IsAuthenticated && target.IsConnected && target.HasRecvFlag(RT_RECV_FLAG.RECV_SINGLE))
             {

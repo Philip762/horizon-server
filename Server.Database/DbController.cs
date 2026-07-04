@@ -2665,384 +2665,242 @@ namespace Server.Database
 
         #region Http
 
+        // Single, shared HttpClient for all middleware calls. Creating a new HttpClient +
+        // HttpClientHandler per request (the previous behavior) leaks the underlying sockets into
+        // TIME_WAIT and exhausts ephemeral ports under load. One long-lived client with a pooled
+        // handler is the recommended .NET pattern; per-request state (the auth header) is carried
+        // on a per-call HttpRequestMessage via SendDbAsync below.
+        private static readonly HttpClient _httpClient = CreateHttpClient();
+
+        private static HttpClient CreateHttpClient()
+        {
+            var handler = new HttpClientHandler
+            {
+                ClientCertificateOptions = ClientCertificateOption.Manual,
+                // Preserves the prior behavior of accepting the middleware's certificate. For a
+                // production deployment over an untrusted network, validate/pin the cert instead.
+                ServerCertificateCustomValidationCallback = (msg, cert, chain, errors) => true,
+            };
+
+            return new HttpClient(handler)
+            {
+                // Hard cap so a stalled middleware cannot hang a request (and hold its socket open)
+                // for the default 100s. Call sites additionally wrap calls in TimeoutAfter(...).
+                Timeout = TimeSpan.FromSeconds(30),
+            };
+        }
+
+        private async Task<HttpResponseMessage> SendDbAsync(HttpMethod method, string route, HttpContent content = null)
+        {
+            var request = new HttpRequestMessage(method, $"{_settings.DatabaseUrl}/{route}");
+            if (content != null)
+                request.Content = content;
+
+            request.Headers.TryAddWithoutValidation("Accept", "application/json");
+            if (!string.IsNullOrEmpty(_dbAccessToken))
+                request.Headers.TryAddWithoutValidation("Authorization", _dbAccessToken);
+
+            return await _httpClient.SendAsync(request);
+        }
+
         public async Task<HttpResponseMessage> DeleteDbAsync(string route)
         {
-            // 
             HttpResponseMessage result = null;
-
-            using (var handler = new HttpClientHandler())
+            try
             {
-                handler.ClientCertificateOptions = ClientCertificateOption.Manual;
-                handler.ServerCertificateCustomValidationCallback =
-                    (httpRequestMessage, cert, cetChain, policyErrors) =>
-                    {
-                        return true;
-                    };
-
-                using (var client = new HttpClient(handler))
-                {
-                    if (!string.IsNullOrEmpty(_dbAccessToken))
-                        client.DefaultRequestHeaders.Add("Authorization", _dbAccessToken);
-                    client.DefaultRequestHeaders.Add("Accept", "application/json");
-
-                    try
-                    {
-                        result = await client.DeleteAsync($"{_settings.DatabaseUrl}/{route}");
-                    }
-                    catch (HttpRequestException e)
-                    {
-                        Logger.Error(e);
-                        ClearAuthToken();
-                        result = null;
-                    }
-                    catch (Exception e)
-                    {
-                        Logger.Error(e);
-                        result = null;
-                    }
-                }
+                result = await SendDbAsync(HttpMethod.Delete, route);
             }
-
+            catch (HttpRequestException e)
+            {
+                Logger.Error(e);
+                ClearAuthToken();
+                result = null;
+            }
+            catch (Exception e)
+            {
+                Logger.Error(e);
+                result = null;
+            }
             return result;
         }
 
         public async Task<HttpResponseMessage> GetDbAsync(string route)
         {
-            // 
             HttpResponseMessage result = null;
-
-            using (var handler = new HttpClientHandler())
+            try
             {
-                handler.ClientCertificateOptions = ClientCertificateOption.Manual;
-                handler.ServerCertificateCustomValidationCallback =
-                    (httpRequestMessage, cert, cetChain, policyErrors) =>
-                    {
-                        return true;
-                    };
-
-                using (var client = new HttpClient(handler))
-                {
-                    if (!string.IsNullOrEmpty(_dbAccessToken))
-                        client.DefaultRequestHeaders.Add("Authorization", _dbAccessToken);
-                    client.DefaultRequestHeaders.Add("Accept", "application/json");
-
-                    try
-                    {
-                        result = await client.GetAsync($"{_settings.DatabaseUrl}/{route}");
-                    }
-                    catch (HttpRequestException e)
-                    {
-                        Logger.Error(e);
-                        ClearAuthToken();
-                        result = null;
-                    }
-                    catch (Exception e)
-                    {
-                        Logger.Error(e);
-                        result = null;
-                    }
-                }
+                result = await SendDbAsync(HttpMethod.Get, route);
             }
-
+            catch (HttpRequestException e)
+            {
+                Logger.Error(e);
+                ClearAuthToken();
+                result = null;
+            }
+            catch (Exception e)
+            {
+                Logger.Error(e);
+                result = null;
+            }
             return result;
         }
 
         public async Task<T> GetDbAsync<T>(string route)
         {
-            // 
             T result = default(T);
-
-            using (var handler = new HttpClientHandler())
+            try
             {
-                handler.ClientCertificateOptions = ClientCertificateOption.Manual;
-                handler.ServerCertificateCustomValidationCallback =
-                    (httpRequestMessage, cert, cetChain, policyErrors) =>
-                    {
-                        return true;
-                    };
+                var response = await SendDbAsync(HttpMethod.Get, route);
 
-                using (var client = new HttpClient(handler))
-                {
-                    client.DefaultRequestHeaders.Add("Accept", "application/json");
-
-                    try
-                    {
-                        if (!string.IsNullOrEmpty(_dbAccessToken))
-                            client.DefaultRequestHeaders.Add("Authorization", _dbAccessToken);
-                        var response = await client.GetAsync($"{_settings.DatabaseUrl}/{route}");
-
-                        // Deserialize on success
-                        if (response.IsSuccessStatusCode)
-                            result = JsonConvert.DeserializeObject<T>(await response.Content.ReadAsStringAsync());
-                    }
-                    catch (HttpRequestException e)
-                    {
-                        Logger.Error(e);
-                        ClearAuthToken();
-                        result = default(T);
-                    }
-                    catch (Exception e)
-                    {
-                        Logger.Error(e);
-                        result = default(T);
-                    }
-                }
+                // Deserialize on success
+                if (response.IsSuccessStatusCode)
+                    result = JsonConvert.DeserializeObject<T>(await response.Content.ReadAsStringAsync());
             }
-
+            catch (HttpRequestException e)
+            {
+                Logger.Error(e);
+                ClearAuthToken();
+                result = default(T);
+            }
+            catch (Exception e)
+            {
+                Logger.Error(e);
+                result = default(T);
+            }
             return result;
         }
 
         public async Task<HttpResponseMessage> PostDbAsync(string route, string body)
         {
-            // 
             HttpResponseMessage result = null;
-
-            using (var handler = new HttpClientHandler())
+            try
             {
-                handler.ClientCertificateOptions = ClientCertificateOption.Manual;
-                handler.ServerCertificateCustomValidationCallback =
-                    (httpRequestMessage, cert, cetChain, policyErrors) =>
-                    {
-                        return true;
-                    };
-
-                using (var client = new HttpClient(handler))
-                {
-                    if (!string.IsNullOrEmpty(_dbAccessToken))
-                        client.DefaultRequestHeaders.Add("Authorization", _dbAccessToken);
-                    client.DefaultRequestHeaders.Add("Accept", "application/json");
-
-                    try
-                    {
-                        result = await client.PostAsync($"{_settings.DatabaseUrl}/{route}", String.IsNullOrEmpty(body) ? null : new StringContent(body, Encoding.UTF8, "application/json"));
-                    }
-                    catch (HttpRequestException e)
-                    {
-                        Logger.Error(e);
-                        ClearAuthToken();
-                        result = null;
-                    }
-                    catch (Exception e)
-                    {
-                        Logger.Error(e);
-                        result = null;
-                    }
-                }
+                result = await SendDbAsync(HttpMethod.Post, route, String.IsNullOrEmpty(body) ? null : new StringContent(body, Encoding.UTF8, "application/json"));
             }
-
+            catch (HttpRequestException e)
+            {
+                Logger.Error(e);
+                ClearAuthToken();
+                result = null;
+            }
+            catch (Exception e)
+            {
+                Logger.Error(e);
+                result = null;
+            }
             return result;
         }
 
         public async Task<HttpResponseMessage> PostDbAsync(string route, object body)
         {
-            // 
             HttpResponseMessage result = null;
-
-            using (var handler = new HttpClientHandler())
+            try
             {
-                handler.ClientCertificateOptions = ClientCertificateOption.Manual;
-                handler.ServerCertificateCustomValidationCallback =
-                    (httpRequestMessage, cert, cetChain, policyErrors) =>
-                    {
-                        return true;
-                    };
-
-                using (var client = new HttpClient(handler))
-                {
-                    if (!string.IsNullOrEmpty(_dbAccessToken))
-                        client.DefaultRequestHeaders.Add("Authorization", _dbAccessToken);
-                    client.DefaultRequestHeaders.Add("Accept", "application/json");
-
-                    try
-                    {
-                        result = await client.PostAsync($"{_settings.DatabaseUrl}/{route}", new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json"));
-                    }
-                    catch (HttpRequestException e)
-                    {
-                        Logger.Error(e);
-                        ClearAuthToken();
-                        result = null;
-                    }
-                    catch (Exception e)
-                    {
-                        Logger.Error(e);
-                        result = null;
-                    }
-                }
+                result = await SendDbAsync(HttpMethod.Post, route, new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json"));
             }
-
+            catch (HttpRequestException e)
+            {
+                Logger.Error(e);
+                ClearAuthToken();
+                result = null;
+            }
+            catch (Exception e)
+            {
+                Logger.Error(e);
+                result = null;
+            }
             return result;
         }
 
         public async Task<T> PostDbAsync<T>(string route, object body)
         {
-            // 
             T result = default(T);
-
-            using (var handler = new HttpClientHandler())
+            try
             {
-                handler.ClientCertificateOptions = ClientCertificateOption.Manual;
-                handler.ServerCertificateCustomValidationCallback =
-                    (httpRequestMessage, cert, cetChain, policyErrors) =>
-                    {
-                        return true;
-                    };
+                var response = await SendDbAsync(HttpMethod.Post, route, new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json"));
 
-                using (var client = new HttpClient(handler))
-                {
-                    if (!string.IsNullOrEmpty(_dbAccessToken))
-                        client.DefaultRequestHeaders.Add("Authorization", _dbAccessToken);
-                    client.DefaultRequestHeaders.Add("Accept", "application/json");
-
-                    try
-                    {
-                        var response = await client.PostAsync($"{_settings.DatabaseUrl}/{route}", new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json"));
-
-                        // Deserialize on success
-                        if (response.IsSuccessStatusCode)
-                            result = JsonConvert.DeserializeObject<T>(await response.Content.ReadAsStringAsync());
-                    }
-                    catch (HttpRequestException e)
-                    {
-                        Logger.Error(e);
-                        ClearAuthToken();
-                        result = default(T);
-                    }
-                    catch (Exception e)
-                    {
-                        Logger.Error(e);
-                        result = default(T);
-                    }
-                }
+                // Deserialize on success
+                if (response.IsSuccessStatusCode)
+                    result = JsonConvert.DeserializeObject<T>(await response.Content.ReadAsStringAsync());
             }
-
+            catch (HttpRequestException e)
+            {
+                Logger.Error(e);
+                ClearAuthToken();
+                result = default(T);
+            }
+            catch (Exception e)
+            {
+                Logger.Error(e);
+                result = default(T);
+            }
             return result;
         }
 
         public async Task<HttpResponseMessage> PutDbAsync(string route, string body)
         {
-            // 
             HttpResponseMessage result = null;
-
-            using (var handler = new HttpClientHandler())
+            try
             {
-                handler.ClientCertificateOptions = ClientCertificateOption.Manual;
-                handler.ServerCertificateCustomValidationCallback =
-                    (httpRequestMessage, cert, cetChain, policyErrors) =>
-                    {
-                        return true;
-                    };
-
-                using (var client = new HttpClient(handler))
-                {
-                    if (!string.IsNullOrEmpty(_dbAccessToken))
-                        client.DefaultRequestHeaders.Add("Authorization", _dbAccessToken);
-                    client.DefaultRequestHeaders.Add("Accept", "application/json");
-
-                    try
-                    {
-                        result = await client.PutAsync($"{_settings.DatabaseUrl}/{route}", String.IsNullOrEmpty(body) ? null : new StringContent(body, Encoding.UTF8, "application/json"));
-                    }
-                    catch (HttpRequestException e)
-                    {
-                        Logger.Error(e);
-                        ClearAuthToken();
-                        result = null;
-                    }
-                    catch (Exception e)
-                    {
-                        Logger.Error(e);
-                        result = null;
-                    }
-                }
+                result = await SendDbAsync(HttpMethod.Put, route, String.IsNullOrEmpty(body) ? null : new StringContent(body, Encoding.UTF8, "application/json"));
             }
-
+            catch (HttpRequestException e)
+            {
+                Logger.Error(e);
+                ClearAuthToken();
+                result = null;
+            }
+            catch (Exception e)
+            {
+                Logger.Error(e);
+                result = null;
+            }
             return result;
         }
 
         public async Task<HttpResponseMessage> PutDbAsync(string route, object body)
         {
-            // 
             HttpResponseMessage result = null;
-
-            using (var handler = new HttpClientHandler())
+            try
             {
-                handler.ClientCertificateOptions = ClientCertificateOption.Manual;
-                handler.ServerCertificateCustomValidationCallback =
-                    (httpRequestMessage, cert, cetChain, policyErrors) =>
-                    {
-                        return true;
-                    };
-
-                using (var client = new HttpClient(handler))
-                {
-                    if (!string.IsNullOrEmpty(_dbAccessToken))
-                        client.DefaultRequestHeaders.Add("Authorization", _dbAccessToken);
-                    client.DefaultRequestHeaders.Add("Accept", "application/json");
-
-                    try
-                    {
-                        result = await client.PutAsync($"{_settings.DatabaseUrl}/{route}", new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json"));
-                    }
-                    catch (HttpRequestException e)
-                    {
-                        Logger.Error(e);
-                        ClearAuthToken();
-                        result = null;
-                    }
-                    catch (Exception e)
-                    {
-                        Logger.Error(e);
-                        result = null;
-                    }
-                }
+                result = await SendDbAsync(HttpMethod.Put, route, new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json"));
             }
-
+            catch (HttpRequestException e)
+            {
+                Logger.Error(e);
+                ClearAuthToken();
+                result = null;
+            }
+            catch (Exception e)
+            {
+                Logger.Error(e);
+                result = null;
+            }
             return result;
         }
 
         public async Task<T> PutDbAsync<T>(string route, object body)
         {
-            // 
             T result = default(T);
-
-            using (var handler = new HttpClientHandler())
+            try
             {
-                handler.ClientCertificateOptions = ClientCertificateOption.Manual;
-                handler.ServerCertificateCustomValidationCallback =
-                    (httpRequestMessage, cert, cetChain, policyErrors) =>
-                    {
-                        return true;
-                    };
+                var response = await SendDbAsync(HttpMethod.Put, route, new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json"));
 
-                using (var client = new HttpClient(handler))
-                {
-                    if (!string.IsNullOrEmpty(_dbAccessToken))
-                        client.DefaultRequestHeaders.Add("Authorization", _dbAccessToken);
-                    client.DefaultRequestHeaders.Add("Accept", "application/json");
-
-                    try
-                    {
-                        var response = await client.PutAsync($"{_settings.DatabaseUrl}/{route}", new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json"));
-
-                        // Deserialize on success
-                        if (response.IsSuccessStatusCode)
-                            result = JsonConvert.DeserializeObject<T>(await response.Content.ReadAsStringAsync());
-                    }
-                    catch (HttpRequestException e)
-                    {
-                        Logger.Error(e);
-                        ClearAuthToken();
-                        result = default(T);
-                    }
-                    catch (Exception e)
-                    {
-                        Logger.Error(e);
-                        result = default(T);
-                    }
-                }
+                // Deserialize on success
+                if (response.IsSuccessStatusCode)
+                    result = JsonConvert.DeserializeObject<T>(await response.Content.ReadAsStringAsync());
             }
-
+            catch (HttpRequestException e)
+            {
+                Logger.Error(e);
+                ClearAuthToken();
+                result = default(T);
+            }
+            catch (Exception e)
+            {
+                Logger.Error(e);
+                result = default(T);
+            }
             return result;
         }
 

@@ -193,10 +193,10 @@ namespace Server.Dme
             }
             catch (Exception ex)
             {
+                // Log and continue. Previously a single tick exception tore down the TCP server
+                // and every MPS manager while the main loop kept spinning against dead servers,
+                // turning any transient/isolated error into a permanent (and silent) outage.
                 Logger.Error(ex);
-
-                await Task.WhenAll(Managers.Select(x => x.Value.Stop()));
-                await TcpServer.Stop();
             }
         }
 
@@ -280,7 +280,18 @@ namespace Server.Dme
             if (args.Length > 0)
                 CONFIG_DIRECTIORY = args[0];
 
-            // 
+            // Global safety net: log unhandled/unobserved exceptions instead of letting a stray
+            // background-task fault silently terminate a long-running server (no such handler
+            // existed before, so any unobserved Task exception could take the process down).
+            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+                Logger.Error($"FATAL unhandled exception: {e.ExceptionObject}");
+            TaskScheduler.UnobservedTaskException += (s, e) =>
+            {
+                Logger.Error($"Unobserved task exception: {e.Exception}");
+                e.SetObserved();
+            };
+
+            //
             Database ??= new DbController(DB_CONFIG_FILE, DB_SIM_FILE);
 
             // 
