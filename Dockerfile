@@ -1,5 +1,5 @@
 # Build stage =========================================================================
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS builder
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS builder
 
 COPY . /src
 
@@ -26,8 +26,8 @@ RUN dotnet publish -c Release -o out
 
 # Use the runtime-only ASP.NET image (not the SDK) for the final stage: it drops the
 # compilers/build tooling, cutting the production image from ~800MB to ~220MB and shrinking
-# the attack surface. The servers are net9.0 apps and only need the runtime here.
-FROM mcr.microsoft.com/dotnet/aspnet:9.0
+# the attack surface. The servers are net10.0 apps and only need the runtime here.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
 RUN mkdir /logs
 COPY ./docker /docker
 RUN chmod a+x /docker/entrypoint.sh
