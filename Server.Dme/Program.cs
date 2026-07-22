@@ -175,6 +175,7 @@ namespace Server.Dme
                             }
                             else if ((Utils.GetHighPrecisionUtcTime() - manager.Value.TimeLostConnection)?.TotalSeconds > Settings.MPSReconnectInterval)
                             {
+				Logger.Info($"Reconnecting to MPS (app id {manager.Key}) after connection loss at {manager.Value.TimeLostConnection}.");
                                 tasks.Add(manager.Value.Start());
                             }
                         }

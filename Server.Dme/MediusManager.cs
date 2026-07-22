@@ -2,6 +2,7 @@
 using DotNetty.Codecs.Json;
 using DotNetty.Common.Internal.Logging;
 using DotNetty.Handlers.Logging;
+using DotNetty.Handlers.Timeout;
 using DotNetty.Transport.Bootstrapping;
 using DotNetty.Transport.Channels;
 using DotNetty.Transport.Channels.Sockets;
@@ -58,8 +59,12 @@ namespace Server.Dme
 
         private ConcurrentQueue<BaseScertMessage> _mpsRecvQueue { get; } = new ConcurrentQueue<BaseScertMessage>();
         private ConcurrentQueue<BaseScertMessage> _mpsSendQueue { get; } = new ConcurrentQueue<BaseScertMessage>();
-
-        public MediusManager(int appId)
+	
+	private DateTime _utcLastHeartbeat = Utils.GetHighPrecisionUtcTime();
+	private const int HeartbeatIntervalSeconds = 10;
+	private const int ReadTimeoutSeconds = 45;
+        
+	public MediusManager(int appId)
         {
             ApplicationId = appId;
         }
@@ -126,7 +131,7 @@ namespace Server.Dme
             // Remove client on disconnect
             _scertHandler.OnChannelInactive += (channel) =>
             {
-                Logger.Error($"Lost connection to MPS");
+                Logger.Error($"Lost connection to MPS (app id {ApplicationId}) at {Utils.GetHighPrecisionUtcTime()}.");
                 TimeLostConnection = Utils.GetHighPrecisionUtcTime();
                 _ = Stop();
             };
@@ -149,7 +154,8 @@ namespace Server.Dme
                 .Handler(new ActionChannelInitializer<ISocketChannel>(channel =>
                 {
                     IChannelPipeline pipeline = channel.Pipeline;
-
+			
+		    pipeline.AddLast(new ReadTimeoutHandler(ReadTimeoutSeconds));
                     pipeline.AddLast(new ScertEncoder());
                     pipeline.AddLast(new ScertIEnumerableEncoder());
                     pipeline.AddLast(new ScertTcpFrameDecoder(DotNetty.Buffers.ByteOrder.LittleEndian, Constants.MEDIUS_MESSAGE_MAXLEN, 1, 2, 0, 0, false));
@@ -238,6 +244,14 @@ namespace Server.Dme
 
             try
             {
+
+		// Heartbeat: keep the idle MPS link alive and detectable.
+		if (_mpsState == MPSConnectionState.AUTHENTICATED && (Utils.GetHighPrecisionUtcTime() - _utcLastHeartbeat).TotalSeconds > HeartbeatIntervalSeconds)
+		{
+			_utcLastHeartbeat = Utils.GetHighPrecisionUtcTime();
+			Enqueue(new RT_MSG_CLIENT_ECHO());
+		}
+
                 // Handle outgoing for each world
                 await Task.WhenAll(_worlds.Select(x => x.HandleOutgoingMessages()));
 
@@ -377,7 +391,6 @@ namespace Server.Dme
                 // 
                 case RT_MSG_SERVER_ECHO serverEcho:
                     {
-                        Enqueue(serverEcho);
                         break;
                     }
                 case RT_MSG_CLIENT_ECHO clientEcho:
