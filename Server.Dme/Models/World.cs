@@ -1,4 +1,4 @@
-﻿using DotNetty.Common.Internal.Logging;
+using DotNetty.Common.Internal.Logging;
 using Microsoft.Extensions.Logging;
 using RT.Common;
 using RT.Models;

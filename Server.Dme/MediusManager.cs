@@ -61,8 +61,8 @@ namespace Server.Dme
         private ConcurrentQueue<BaseScertMessage> _mpsSendQueue { get; } = new ConcurrentQueue<BaseScertMessage>();
 	
 	private DateTime _utcLastHeartbeat = Utils.GetHighPrecisionUtcTime();
-	private const int HeartbeatIntervalSeconds = 10;
-	private const int ReadTimeoutSeconds = 45;
+	private const int HeartbeatIntervalSeconds = 60;
+	private const int ReadTimeoutSeconds = 180;
         
 	public MediusManager(int appId)
         {
@@ -143,7 +143,7 @@ namespace Server.Dme
                 _mpsRecvQueue.Enqueue(message);
 
                 // Log if id is set
-                if (message.CanLog())
+                if (message.CanLog() && Logger.DebugEnabled)
                     Logger.Debug($"MPS RECV {channel}: {message}");
             };
 
@@ -395,7 +395,6 @@ namespace Server.Dme
                     }
                 case RT_MSG_CLIENT_ECHO clientEcho:
                     {
-                        Enqueue(new RT_MSG_CLIENT_ECHO() { Value = clientEcho.Value });
                         break;
                     }
                 case RT_MSG_SERVER_APP serverApp:

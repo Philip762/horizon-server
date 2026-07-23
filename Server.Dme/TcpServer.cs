@@ -1,4 +1,5 @@
-﻿using DotNetty.Common.Internal.Logging;
+using DotNetty.Common.Internal.Logging;
+using DotNetty.Common.Utilities;
 using DotNetty.Handlers.Logging;
 using DotNetty.Transport.Bootstrapping;
 using DotNetty.Transport.Channels;
@@ -56,8 +57,9 @@ namespace Server.Dme
             public bool ShouldDestroy => ClientObject == null && (Utils.GetHighPrecisionUtcTime() - TimeConnected).TotalSeconds > Program.GetAppSettingsOrDefault(ApplicationId).ClientTimeoutSeconds;
         }
 
+        protected static readonly AttributeKey<ChannelData> CHANNEL_DATA = AttributeKey<ChannelData>.ValueOf("DME_TCP_CHANNEL_DATA");
+
         protected ConcurrentQueue<IChannel> _forceDisconnectQueue = new ConcurrentQueue<IChannel>();
-        protected ConcurrentDictionary<string, ChannelData> _channelDatas = new ConcurrentDictionary<string, ChannelData>();
         protected ConcurrentDictionary<uint, ClientObject> _scertIdToClient = new ConcurrentDictionary<uint, ClientObject>();
 
         /// <summary>
@@ -73,29 +75,25 @@ namespace Server.Dme
             // Add client on connect
             _scertHandler.OnChannelActive += (IChannel channel) =>
             {
-                string key = channel.Id.AsLongText();
-                _channelDatas.TryAdd(key, new ChannelData());
+                channel.GetAttribute(CHANNEL_DATA).Set(new ChannelData());
             };
 
             // Remove client on disconnect
             _scertHandler.OnChannelInactive += (channel) =>
             {
-                string key = channel.Id.AsLongText();
-                if (_channelDatas.TryRemove(key, out var data))
+                var data = channel.GetAttribute(CHANNEL_DATA).GetAndSet(null);
+                if (data != null && data.ClientObject != null)
                 {
-                    if (data.ClientObject != null)
-                    {
-                        data.ClientObject.OnTcpDisconnected();
-                        _scertIdToClient.TryRemove(data.ClientObject.ScertId, out _);
-                    }
+                    data.ClientObject.OnTcpDisconnected();
+                    _scertIdToClient.TryRemove(data.ClientObject.ScertId, out _);
                 }
             };
 
             // Queue all incoming messages
             _scertHandler.OnChannelMessage += (channel, message) =>
             {
-                string key = channel.Id.AsLongText();
-                if (_channelDatas.TryGetValue(key, out var data))
+                var data = channel.GetAttribute(CHANNEL_DATA).Get();
+                if (data != null)
                 {
                     if (!data.Ignore && (data.ClientObject == null || !data.ClientObject.IsDestroyed))
                     {
@@ -109,7 +107,7 @@ namespace Server.Dme
                 }
 
                 // Log if id is set
-                if (message.CanLog())
+                if (message.CanLog() && Logger.DebugEnabled)
                     Logger.Debug($"TCP RECV {data?.ClientObject},{channel}: {message}");
             };
 
@@ -190,7 +188,7 @@ namespace Server.Dme
                 _ = ForceDisconnectClient(channel);
 
                 // Remove
-                _channelDatas.TryRemove(channel.Id.AsLongText(), out var d);
+                var d = channel.GetAttribute(CHANNEL_DATA).GetAndSet(null);
                 Logger.Warn($"REMOVING CHANNEL {channel},{d},{d?.ClientObject}");
 
                 // close after 5 seconds
@@ -211,13 +209,11 @@ namespace Server.Dme
             if (clientChannel == null)
                 return;
 
-            // 
-            string key = clientChannel.Id.AsLongText();
-
             try
             {
-                // 
-                if (_channelDatas.TryGetValue(key, out var data))
+                //
+                var data = clientChannel.GetAttribute(CHANNEL_DATA).Get();
+                if (data != null)
                 {
                     // Process all messages in queue
                     while (data.RecvQueue.TryDequeue(out var message))
@@ -246,14 +242,14 @@ namespace Server.Dme
             if (clientChannel == null)
                 return;
 
-            // 
+            //
             List<BaseScertMessage> responses = new List<BaseScertMessage>();
-            string key = clientChannel.Id.AsLongText();
 
             try
             {
-                // 
-                if (_channelDatas.TryGetValue(key, out var data))
+                //
+                var data = clientChannel.GetAttribute(CHANNEL_DATA).Get();
+                if (data != null)
                 {
                     // Destroy
                     if (data.ShouldDestroy)
@@ -298,8 +294,9 @@ namespace Server.Dme
 
                         //
                         if (responses.Count > 0)
-                          _ = clientChannel.WriteAndFlushAsync(responses)
-                                .ContinueWith(t => Logger.Info($"Failed to write to client TCP channel (likely disconnected): {t.Exception?.InnerException?.Message}"), TaskContinuationOptions.OnlyOnFaulted);                    }
+                            _ = clientChannel.WriteAndFlushAsync(responses)
+                                .ContinueWith(t => Logger.Info($"Failed to write to client TCP channel (likely disconnected): {t.Exception?.InnerException?.Message}"), TaskContinuationOptions.OnlyOnFaulted);
+                    }
                 }
             }
             catch (Exception e)
@@ -595,8 +592,11 @@ namespace Server.Dme
         {
             foreach (var clientChannel in clientChannels)
                 if (clientChannel != null)
-                    if (_channelDatas.TryGetValue(clientChannel.Id.AsLongText(), out var data))
+                {
+                    var data = clientChannel.GetAttribute(CHANNEL_DATA).Get();
+                    if (data != null)
                         data.SendQueue.Enqueue(message);
+                }
         }
 
         public void Queue(IEnumerable<BaseScertMessage> messages, params IChannel[] clientChannels)
@@ -608,9 +608,12 @@ namespace Server.Dme
         {
             foreach (var clientChannel in clientChannels)
                 if (clientChannel != null)
-                    if (_channelDatas.TryGetValue(clientChannel.Id.AsLongText(), out var data))
+                {
+                    var data = clientChannel.GetAttribute(CHANNEL_DATA).Get();
+                    if (data != null)
                         foreach (var message in messages)
                             data.SendQueue.Enqueue(message);
+                }
         }
 
         #endregion
