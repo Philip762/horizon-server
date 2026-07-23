@@ -298,8 +298,8 @@ namespace Server.Dme
 
                         //
                         if (responses.Count > 0)
-                            _ = clientChannel.WriteAndFlushAsync(responses);
-                    }
+                          _ = clientChannel.WriteAndFlushAsync(responses)
+                                .ContinueWith(t => Logger.Info($"Failed to write to client TCP channel (likely disconnected): {t.Exception?.InnerException?.Message}"), TaskContinuationOptions.OnlyOnFaulted);                    }
                 }
             }
             catch (Exception e)

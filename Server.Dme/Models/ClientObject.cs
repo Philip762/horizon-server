@@ -254,7 +254,8 @@ namespace Server.Dme.Models
 
                 // send
                 if (responses.Count > 0)
-                    _ = Tcp.WriteAndFlushAsync(responses);
+                    _ = Tcp.WriteAndFlushAsync(responses)
+                        .ContinueWith(t => Logger.Info($"Failed to write to client TCP channel (likely disconnected): {t.Exception?.InnerException?.Message}"), TaskContinuationOptions.OnlyOnFaulted);
             }
 
             // udp

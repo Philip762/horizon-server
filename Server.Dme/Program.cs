@@ -298,40 +298,28 @@ namespace Server.Dme
             // 
             Initialize();
 
-            // Add file logger if path is valid
-            if (new FileInfo(LogSettings.Singleton.LogPath)?.Directory?.Exists ?? false)
-            {
-                var loggingOptions = new FileLoggerOptions()
-                {
-                    Append = false,
-                    FileSizeLimitBytes = LogSettings.Singleton.RollingFileSize,
-                    MaxRollingFiles = LogSettings.Singleton.RollingFileCount
-                };
-                InternalLoggerFactory.DefaultFactory.AddProvider(_fileLogger = new FileLoggerProvider(LogSettings.Singleton.LogPath, loggingOptions));
-                _fileLogger.MinLevel = Settings.Logging.LogLevel;
-            }
-
-            // Optionally add console logger (always enabled when debugging)
-#if DEBUG
             InternalLoggerFactory.DefaultFactory = LoggerFactory.Create(builder =>
             {
-                builder
-                    .AddFilter(level => level >= LogSettings.Singleton.LogLevel)
-                    .AddConsole();
-            });
-            //InternalLoggerFactory.DefaultFactory.AddProvider(new ConsoleLoggerProvider((s, level) => level >= LogSettings.Singleton.LogLevel, true));
-#else
-            if (Settings.Logging.LogToConsole)
-            {
-                InternalLoggerFactory.DefaultFactory = LoggerFactory.Create(builder =>
+                builder.AddFilter(level => level >= LogSettings.Singleton.LogLevel);
+
+                if (new FileInfo(LogSettings.Singleton.LogPath)?.Directory?.Exists ?? false)
                 {
-                    builder
-                        .AddFilter(level => level >= LogSettings.Singleton.LogLevel)
-                        .AddConsole();
-                });
-                //InternalLoggerFactory.DefaultFactory.AddProvider(new ConsoleLoggerProvider((s, level) => level >= LogSettings.Singleton.LogLevel, true));
-            }
+                    var loggingOptions = new FileLoggerOptions()
+                    {
+                        Append = false,
+                        FileSizeLimitBytes = LogSettings.Singleton.RollingFileSize,
+                        MaxRollingFiles = LogSettings.Singleton.RollingFileCount
+                    };
+                    builder.AddProvider(_fileLogger = new FileLoggerProvider(LogSettings.Singleton.LogPath, loggingOptions));
+                    _fileLogger.MinLevel = Settings.Logging.LogLevel;
+                }
+#if DEBUG
+                builder.AddSimpleConsole(o => o.TimestampFormat = "yyyy-MM-dd HH:mm:ss.fff ");
+#else
+                if (Settings.Logging.LogToConsole)
+                    builder.AddSimpleConsole(o => o.TimestampFormat = "yyyy-MM-dd HH:mm:ss.fff ");
 #endif
+            });
 
             // Initialize plugins
             Plugins = new PluginsManager(Settings.PluginsPath);

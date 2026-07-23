@@ -184,8 +184,8 @@ namespace Server.Dme
                         };
 
                         // Send it twice in case of packet loss
-                        //_boundChannel.WriteAndFlushAsync(new ScertDatagramPacket(msg, packet.Source));
-                        _boundChannel.WriteAndFlushAsync(new ScertDatagramPacket(msg, packet.Source));
+                        _ = _boundChannel.WriteAndFlushAsync(new ScertDatagramPacket(msg, packet.Source))
+                            .ContinueWith(t => Logger.Info($"Failed to write to client UDP channel (likely disconnected): {t.Exception?.InnerException?.Message}"), TaskContinuationOptions.OnlyOnFaulted);
                         break;
                     }
                 case RT_MSG_SERVER_ECHO serverEchoReply:
