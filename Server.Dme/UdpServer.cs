@@ -1,15 +1,11 @@
 ﻿using DotNetty.Common.Internal.Logging;
-using DotNetty.Common.Utilities;
 using DotNetty.Handlers.Logging;
 using DotNetty.Transport.Bootstrapping;
 using DotNetty.Transport.Channels;
 using DotNetty.Transport.Channels.Sockets;
-using Microsoft.VisualBasic.FileIO;
 using RT.Common;
-using RT.Cryptography;
 using RT.Models;
 using Server.Common;
-using Server.Pipeline.Tcp;
 using Server.Pipeline.Udp;
 using Server.Dme.Models;
 using System;
@@ -17,7 +13,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
-using System.Text;
 using System.Threading.Tasks;
 using Server.Dme.PluginArgs;
 using Server.Plugins.Interface;
@@ -32,8 +27,8 @@ namespace Server.Dme
 
 
         public int Port { get; protected set; } = -1;
-
-        protected IEventLoopGroup _workerGroup = null;
+        
+        private static readonly IEventLoopGroup _workerGroup = new MultithreadEventLoopGroup();
         protected IChannel _boundChannel = null;
         protected ScertDatagramHandler _scertHandler = null;
 
@@ -80,7 +75,6 @@ namespace Server.Dme
         public virtual async Task Start()
         {
             //
-            _workerGroup = new MultithreadEventLoopGroup();
             _scertHandler = new ScertDatagramHandler();
 
             //
@@ -143,12 +137,6 @@ namespace Server.Dme
             }
             finally
             {
-                if (_workerGroup != null)
-                {
-                    await Task.WhenAll(
-                            _workerGroup.ShutdownGracefullyAsync(TimeSpan.FromMilliseconds(100), TimeSpan.FromSeconds(1)));
-                }
-
                 FreePort();
             }
         }

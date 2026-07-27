@@ -1,5 +1,4 @@
 ﻿using DotNetty.Common.Internal.Logging;
-using Microsoft.Extensions.Logging;
 using RT.Common;
 using RT.Models;
 using Server.Dme.PluginArgs;
@@ -9,8 +8,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Server.Dme.Models
@@ -253,7 +250,7 @@ namespace Server.Dme.Models
 
         public void SendTcpAppSingle(ClientObject source, short targetDmeId, byte[] Payload)
         {
-            var target = Clients.FirstOrDefault(x => x.Value.DmeId == targetDmeId).Value;
+            Clients.TryGetValue(targetDmeId, out ClientObject target);
 
             if (target != null && target.IsAuthenticated && target.IsConnected && target.HasRecvFlag(RT_RECV_FLAG.RECV_SINGLE))
             {
@@ -267,7 +264,7 @@ namespace Server.Dme.Models
 
         public void SendUdpAppSingle(ClientObject source, short targetDmeId, byte[] Payload)
         {
-            var target = Clients.FirstOrDefault(x => x.Value.DmeId == targetDmeId).Value;
+            Clients.TryGetValue(targetDmeId, out ClientObject target);
 
             if (target != null && target.IsAuthenticated && target.IsConnected && target.HasRecvFlag(RT_RECV_FLAG.RECV_SINGLE))
             {
