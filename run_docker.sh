@@ -24,6 +24,7 @@ docker run \
   -p 8765:8765 \
   -p 50000-50100:50000-50100/udp \
   -p 10070:10070/udp \
+  -p 127.0.0.1:8081:8081 \
   -v "${PWD}/logs":/logs \
   -v "${PWD}/dme.json":/dme/dme.json \
   -v "${PWD}/medius.json":/medius/medius.json \

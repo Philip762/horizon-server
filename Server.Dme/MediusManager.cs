@@ -59,17 +59,17 @@ namespace Server.Dme
 
         private ConcurrentQueue<BaseScertMessage> _mpsRecvQueue { get; } = new ConcurrentQueue<BaseScertMessage>();
         private ConcurrentQueue<BaseScertMessage> _mpsSendQueue { get; } = new ConcurrentQueue<BaseScertMessage>();
-	
-	private DateTime _utcLastHeartbeat = Utils.GetHighPrecisionUtcTime();
-	private const int HeartbeatIntervalSeconds = 60;
-	private const int ReadTimeoutSeconds = 180;
-        
-	public MediusManager(int appId)
+
+        private DateTime _utcLastHeartbeat = Utils.GetHighPrecisionUtcTime();
+
+        public MediusManager(int appId)
         {
             ApplicationId = appId;
         }
 
         #region Clients
+
+        public int ClientCount => _sessionKeyToClient.Count;
 
         public ClientObject GetClientByAccessToken(string accessToken)
         {
@@ -154,8 +154,8 @@ namespace Server.Dme
                 .Handler(new ActionChannelInitializer<ISocketChannel>(channel =>
                 {
                     IChannelPipeline pipeline = channel.Pipeline;
-			
-		    pipeline.AddLast(new ReadTimeoutHandler(ReadTimeoutSeconds));
+
+                    pipeline.AddLast(new ReadTimeoutHandler(Program.Settings.ReadTimeoutSeconds));
                     pipeline.AddLast(new ScertEncoder());
                     pipeline.AddLast(new ScertIEnumerableEncoder());
                     pipeline.AddLast(new ScertTcpFrameDecoder(DotNetty.Buffers.ByteOrder.LittleEndian, Constants.MEDIUS_MESSAGE_MAXLEN, 1, 2, 0, 0, false));
@@ -245,12 +245,12 @@ namespace Server.Dme
             try
             {
 
-		// Heartbeat: keep the idle MPS link alive and detectable.
-		if (_mpsState == MPSConnectionState.AUTHENTICATED && (Utils.GetHighPrecisionUtcTime() - _utcLastHeartbeat).TotalSeconds > HeartbeatIntervalSeconds)
-		{
-			_utcLastHeartbeat = Utils.GetHighPrecisionUtcTime();
-			Enqueue(new RT_MSG_CLIENT_ECHO());
-		}
+                // Heartbeat: keep the idle MPS link alive and detectable.
+                if (_mpsState == MPSConnectionState.AUTHENTICATED && (Utils.GetHighPrecisionUtcTime() - _utcLastHeartbeat).TotalSeconds > Program.Settings.HeartbeatIntervalSeconds)
+                {
+                    _utcLastHeartbeat = Utils.GetHighPrecisionUtcTime();
+                    Enqueue(new RT_MSG_CLIENT_ECHO());
+                }
 
                 // Handle outgoing for each world
                 await Task.WhenAll(_worlds.Select(x => x.HandleOutgoingMessages()));

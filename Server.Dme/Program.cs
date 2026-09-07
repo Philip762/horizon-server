@@ -47,6 +47,7 @@ namespace Server.Dme
         public static Dictionary<int, MediusManager> Managers = new Dictionary<int, MediusManager>();
         public static TcpServer TcpServer = new TcpServer();
         public static PluginsManager Plugins = null;
+        private static MetricsServer _metricsServer = null;
 
         private static FileLoggerProvider _fileLogger = null;
         private static ulong _sessionKeyCounter = 0;
@@ -324,8 +325,15 @@ namespace Server.Dme
             // Initialize plugins
             Plugins = new PluginsManager(Settings.PluginsPath);
 
-            // 
+            _metricsServer = new MetricsServer(Settings.MetricsPort, GetActiveUserCount);
+            _metricsServer.Start();
+
             await StartServerAsync();
+        }
+
+        public static int GetActiveUserCount()
+        {
+            return Managers.Values.Sum(x => x.ClientCount);
         }
 
         static void Initialize()

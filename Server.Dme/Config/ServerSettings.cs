@@ -89,6 +89,25 @@ namespace Server.Dme.Config
         /// Logging settings.
         /// </summary>
         public LogSettings Logging { get; set; } = new LogSettings();
+
+        /// <summary>
+        /// Port for the local-only metrics HTTP endpoint (e.g. GET /active-users).
+        /// Always bound to 127.0.0.1 regardless of other settings, so it is only
+        /// reachable from the same host/container, never from the network.
+        /// </summary>
+        public int MetricsPort { get; set; } = 8081;
+
+        /// <summary>
+        /// Seconds between keep-alive heartbeats sent to the MPS server on the DME's
+        /// own MPS connection.
+        /// </summary>
+        public int HeartbeatIntervalSeconds { get; set; } = 60;
+
+        /// <summary>
+        /// Seconds without receiving any message on the MPS connection before it's
+        /// considered dead and torn down (triggering a reconnect).
+        /// </summary>
+        public int ReadTimeoutSeconds { get; set; } = 180;
     }
 
     public class MPSSettings
